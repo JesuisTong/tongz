@@ -1,0 +1,86 @@
+# Symbol
+
+`Symbol` 是一种**基本数据类型**(es6新增)，有以下特点：
+- 不是构造函数，无法使用 `new` 关键字实例化。
+- 可以在对象中作为对象的键使用，但是该键是**不可枚举**的（可以通过`Object.getOwnPropertySymbols`找到一个对象的属于自己的全部`Symbol`）。
+- 无法被JSON序列化
+
+## 创建一个Symbol对象
+我们可以通过 `Symbol(name)` 或者 `Symbol.for(name)` 创建一个新的`Symbol`对象，其中`name`是一个字符串，用于描述该`Symbol`对象。
+
+注意事项：
+- 每次调用 `Symbol(name)` 创建的 Symbol对象都是唯一的，即使 `name` 相同。
+- `Symbol.for(name)` 会先去**全局Symbol注册表**中查找是否有相应`name`的Symbol对象，如果没有，注册一个描述为`name`的Symbol对象，反之直接返回这个**全局Symbol注册表**中的Symbol对象。
+
+```js
+var s1 = Symbol('foo');
+var s2 = Symbol('foo');
+var s3 = Symbol.for('foo');
+
+s1 === s2; // false
+s1 === s3; // false
+s3 === Symbol.for('foo'); // true
+Symbol.for('foo') === Symbol.for('foo'); // true
+```
+
+## 一些常见的Symbol对象
+- Symbol.iterator
+- Symbol.search
+- Symbol.hasInstance
+- Symbol.isConcatSpreadable
+- Symbol.toPrimitive
+- Symbol.toStringTag
+
+## Symbol有什么用
+- 可以创建一个全局唯一的变量
+- 可以创建一个无命名冲突的属性名，并且此属性是不可枚举的
+- 可以更改一些对象API的表现
+
+### 1. 使一个对象可以枚举其所有的key
+```js
+var foo = {
+    [Symbol.iterator]: function* () {
+        // 对象实现了 Symbol.iterator 方法既被定义为一个可迭代对象
+        for (const key in this) {
+            yield key;
+        }
+    },
+    a: 1,
+    b: 2,
+    c: 3,
+    4: 5,
+}
+
+for (const iterator of foo) {
+    console.log('iterator', iterator);
+}
+```
+
+### 2. 更改其 toString 方法的表现
+```js
+var foo = {
+    [Symbol.toStringTag]: 'Foo',
+};
+
+foo.toString(); // [object Foo]
+```
+
+### 3. 通过 Symbol.hasInstance 自定义 instanceof 的表现
+```js
+class Array1 {
+  static [Symbol.hasInstance](instance) {
+    return Array.isArray(instance);
+  }
+}
+class Array2 {}
+
+console.log([] instanceof Array1); // true
+console.log([] instanceof Array2); // false
+```
+
+## 在开源项目中的应用
+- `React` 在定义 `Component` 的 `type` 的时候使用了 `Symbol` 来确认是否是一个 `ReactElement`
+
+## 对于个人的启发
+1. 可以修改对象的 `Symbol` 属性，来修改对象默认的表现。
+2. 可以利用 `Symbol` 创建一个不可枚举的属性，通过这个属性来确认对象的唯一性。

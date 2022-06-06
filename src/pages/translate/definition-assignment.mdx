@@ -1,0 +1,347 @@
+# [译]JavaScript 中的属性：属性定义 和 属性赋值
+
+你知道 定义一个属性 和 赋值一个属性 是不同的吗？这篇博文将阐述其中的不同以及其对应的影响。
+
+## Part 1. 属性定义 和 属性赋值
+
+**属性定义** 使用 `Object.defineProperty(obj, propName, propDesc)` 等方法进行属性定义。
+
+主要的目的是为 **目标对象** 增加一个 （直接）*属于* 自己的属性，属性对应的*特性*（例如：writable 等等）可以被指定。
+第二点是为了更改某个属性的*特性*，也包括属性的**值**
+
+
+**属性赋值** 对属性进行赋值，通常使用赋值语句 `obj.prop = value`。
+
+主要目的是改变这个属性的值。在应用这个赋值之前，JavaScript会先查询这个对象的原型链[[1]](###引用)：如果有此对象或者其原型上有对应属性赋值的 **setter** 函数，则会调用这个 **setter** 函数。
+属性赋值在属性不存在的时候进行会有副作用，创建携带初始值的一个 *属于* 自己的属性。
+
+接下来两部分会深入讨论分析 属性定义 和 属性赋值 是如何工作的，你可以选择跳过下面两部分直接进入 **Part 4** 结论。
+
+
+## Part 2. 简述：属性特性 和 内部属性
+在我们解释 属性定义 和 属性赋值 是如何工作的之前，让我们回顾一下什么是 属性特性 和 内部属性
+
+### 2.1 不同类型的属性
+JavaScript 中有三类属性：
+1. 具名访问器属性（Named accessor properties）：一个因 `getter` 和 `setter` 而存在的属性。
+2. 具名数据属性（Named data properties）：最常见的，有值的属性，也包括方法。
+3. 内部属性（Internal properties）：被 JavaScript 内部调用，但不能直接被语言使用。然而，通过某些法子还是能访问到他们。例如：每个对象都有一个内部属性叫 `[[Prototype]]`。你无法直接读取，但是你可以用过某些方法获取其对应的值，例如 `Object.getPrototypeOf(obj)`。虽然内部属性由方括号中的名称引用，但它们是无名的，因为它们是不可见的，并且没有正常的字符串值属性名称。
+
+### 2.2 属性特性
+
+属性特性是每个属性都有的，并且会影响到他是如何在JavaScript中运作的，有以下几种特性：
+
+- 所有属性:
+    - `[[Enumerable]]`: 如果一个属性是不可枚举的，其无法被 `for...in` 或者 `Object.keys()` 这些命令找到 [[2]](###引用).
+    - `[[Configurable]]`: 如果一个属性是不可配置的，其特性（除了值（`[[value]]`））无法被 属性定义 修改。
+- 具名数据属性:
+    - `[[Value]]`: 属性的值。
+    - `[[Writable]]`: 决定了属性的值是否可以被修改。
+- 具名访问器属性:
+    - `[[Get]]`: 属性的 `getter` 方法，会在*调用*属性的时候触发。
+    - `[[Set]]`: 属性的 `setter` 方法，会在*赋值*属性的时候触发。
+
+### 2.3 属性描述符
+一个属性描述符是一个对象，它描述了一个属性的特性，例如：
+```
+{
+    value: 123,
+    writable: false
+}
+```
+
+你可以看见上面的属性名对应的是 `[[Value]]` and `[[Writable]]` 这两个特性。
+
+属性描述符由 `Object.defineProperty`， `Object.getOwnPropertyDescriptor`， `Object.create` 等函数使用，这些函数可以更改或返回属性的特性。如果描述符中缺少属性，则以下默认值适用：
+
+|Property|Default value|
+|---|---|
+|value|undefined|
+|get|undefined|
+|set|undefined|
+|writable|false|
+|enumerable|false|
+|configurable|false|
+
+### 2.4 内部属性
+
+所有对象都有几个内部属性。其中，有以下四个：
+
+- `[[Prototype]]`: 对象原型
+- `[[Extensible]]`: 此对象是否*可扩展*，是否可以向其添加新属性？
+- `[[DefineOwnProperty]]`: 定义一个属性。请参阅下面的说明。
+- `[[Put]]`: 分配给属性。请参阅下面的说明。
+
+
+## Part 3. 属性定义 和 属性赋值的细节
+### 3.1 定义一个属性
+通过内部方法定义属性
+```
+[[DefineOwnProperty]](P, Desc, Throw)
+```
+
+P 是属性名。Throw 指定了操作如何处理操作失败：如果 Throw 为 `true` 则抛出异常，否则静默终止。
+
+会`[[DefineOwnProperty]]`触发以下几步：
+
+- 如果这没有自己的属性，其名称为 P：如果对象是可扩展的，则创建一个新属性，如果对象不可扩展，则拒绝。
+- 否则，已经存在自己的属性，并且定义会更改该属性。
+- 如果该属性不可配置，则以下更改将被拒绝：
+    - 将*数据属性*改成*访问器属性*，反之亦然
+    - 更改 [[Configurable]] 或 [[Enumerable]]
+    - 更改 [[Writable]]
+    - 更改 [[Value]] 如果 [[Writable]] 为 `false`
+    - 更改 [[Get]] 或 [[Set]]
+- 否则， 该属性可配置，可按指定进行更改。
+
+如果 Desc 完全反映了这个[P]的当前属性，那么定义永远不会被拒绝，如下例子所示：
+```js
+var foo = {}
+Object.defineProperty(foo, 'bar', {
+    value: 42,
+    writable: false,
+    enumerable: true,
+    configurable: false
+})
+
+Object.defineProperty(q, 'a', Object.getOwnPropertyDescriptor(q, 'a')) // success
+Object.defineProperty(foo, 'bar', {
+    value: 42,
+    writable: false,
+    enumerable: true,
+    configurable: false
+}) // success
+Object.defineProperty(foo, 'bar', {
+    value: 42,
+    writable: true,
+    enumerable: true,
+    configurable: false
+}) // error, Cannot redefine property
+```
+
+用于定义属性的两个函数是 `Object.defineProperty` 和 `Object.defineProperties`。例如：
+```
+    Object.defineProperty(obj, propName, desc)
+```
+
+在内部，这会导致以下方法调用：
+```
+    obj.[[DefineOwnProperty]](propName, desc, true)
+```
+
+### 3.2 属性赋值分配
+通过内部方法处理对属性的赋值
+```
+[[Put]] (P, Value, Throw)
+```
+
+P 和 Throw 的工作原理与 `[[DefineOwnProperty]]` 相同。调用 `[[Put]]` 时，将执行以下步骤。
+- 如果存在一个*只读*属性，其名称为 P 在原型链中的某个位置，则拒绝。
+- 如果原型链中的某个地方有一个 `setter` 的名字是P：执行这个 `setter`。
+- 如果没有自己的属性，其名称为 P：如果对象是*可扩展的*，则创建一个新属性。 如果对象*不可扩展*，则拒绝。
+```
+    this.[[DefineOwnProperty]](
+        P,
+        {
+            value: Value,
+            writable: true,
+            enumerable: true,
+            configurable: true
+        },
+        Throw
+    )
+```
+- 否则，有一个名为 P 的可写属性。更新 P 的值，但保持其属性（如可枚举性）不变。
+```
+    this.[[DefineOwnProperty]](P, { value: Value }, Throw)
+```
+
+赋值运算符 （=） 调用 `[[Put]]`。例如：在内部，这将触发调用 也就是说，在**严格模式**的情况下，赋值运算符在处理一个无法赋值的属性的时候会抛出一个错误，而在非严格模式下，赋值运算符会忽略这个错误。`[[Put]]` 不返回 Value，但赋值运算符返回。
+```
+    obj.prop = v;
+    obj.[[Put]]("prop", v, isStrictModeOn)
+```
+
+
+## Part 4. 影响
+本节介绍属性定义和赋值如何工作的一些影响。
+
+### 4.1 属性赋值 调用了原型链上的 setter，属性定义创建了一个属于对象自身的属性。
+
+给定以下空对象 obj，其原型原型具有一个名为 foo 的 `getter/setter` 对。 定义 obj 的属性 foo 与分配给它有什么区别？
+如果您定义了，那么您的意图是创建一个新属性。这些总是在原型链的第一个对象中创建，在这种情况下，这意味着在obj中：如果你分配给foo，那么你的意图是改变已经存在的东西，并且该更改应该通过`setter`处理。
+事实证明，属性赋值确实调用了 `setter`：您可以通过仅定义 `getter` 将属性设置为只读。下面，对象 `proto2` 的`bar`就是这样一个属性，由 `obj2` 继承。 我们使用严格模式，以便在进行赋值时引发异常。否则，属性赋值将被简单地忽略（但也不会更改`obj`）。
+对于赋值，我们想要更改`bar`，但是由于是只读的而被禁止。 但是，我们可以定义一些新的东西，从而覆盖`proto`的`bar`：
+
+Given the following empty object obj whose prototype proto has a getter/setter pair called foo. What is the difference between defining the property foo of obj versus assigning to it? 
+If you define then your intention is to create a new property. 
+Those are always created in the first object of a prototype chain, which in this case means in obj: If, instead, you assign to foo then your intention is to change something that already exists and that change should be handled via the setter. 
+And it turns out that an assignment does call the setter: You can make a property read-only, by only defining a getter. 
+Below, property bar of object proto2 is such a property and inherited by obj2. 
+We use strict mode so that an exception will be thrown if we make an assignment. 
+Otherwise, the assignment would be simply ignored (but not change obj, either). 
+With an assignment, we want to change bar which is forbidden due to bar being read-only. 
+We can, however, define something new and thus override proto’s property bar:
+```js
+var proto = {
+    get foo() {
+        console.log("Getter");
+        return "a";
+    },
+    set foo(x) {
+        console.log("Setter: "+x);
+    },
+};
+var obj = Object.create(proto);
+> Object.defineProperty(obj, "foo", { value: "b" });
+> obj.foo
+'b'
+> proto.foo
+Getter
+'a'
+> obj.foo = "b";
+Setter: b
+'b'
+"use strict";
+var proto2 = {
+    get bar() {
+        console.log("Getter");
+        return "a";
+    },
+};
+var obj2 = Object.create(proto2);
+> obj2.bar = "b";
+TypeError: obj.bar is read-only
+> Object.defineProperty(obj2, "bar", { value: "b" });
+> obj2.bar
+'b'
+> proto2.bar
+Getter
+'a'
+```
+### 4.2 原型中的只读属性可防止赋值，但不会阻止定义
+原型中的只读属性可防止赋值添加具有相同名称的自己的属性，如果需要这样做，则需要使用定义。该限制是在 ECMAScript 5.1 中新引入的。
+也就是说，赋值 `obj.foo = “b”` 不会自动创建属性 foo，如果 obj 的原型中有一个具有该名称的只读属性。这可以通过以下示例进行演示，其中 obj 的原型 proto 具有只读属性 foo，其值为“a”。 
+属性赋值会导致异常：令人惊讶的是，继承的属性能够影响是否可以创建自己的属性[[3]](###引用)。但这是有道理的，因为这也是`getter`属性的工作方式。
+```
+    "use strict";
+    var proto = Object.defineProperties(
+        {},
+        {
+            foo: {  // attributes of property foo:
+                value: "a",
+                writable: false,  // read-only
+                configurable: true  // explained later
+            }
+        });
+    var obj = Object.create(proto);
+    > obj.foo = "b";
+    TypeError: obj.foo is read-only
+Definition. With definition, we want to create a new own property:
+
+    > Object.defineProperty(obj, "foo", { value: "b" });
+    > obj.foo
+    'b'
+    > proto.foo
+    'a'
+```
+### 4.3 赋值运算符不会更改原型中的属性
+给定以下设置，其中 obj 从 proto 继承属性 foo。 您无法通过分配到 `obj.foo` 来更改 `proto.foo`。
+这样做会创建一个新的自己的属性：此行为的基本原理如下：原型可以引入其值由其所有后代共享的属性。如果决定在后代中更改此类属性，则会创建一个新的自己的属性。
+这意味着属性可以进行更改，但它只是本地的，它不会影响其他后代。从这个角度来看，仅获取属性和只读属性的效果是有意义的：通过阻止创建自己的属性来防止更改。重写原型属性而不是更改它们的动机是什么？
+```
+    var proto = { foo: "a" };
+    var obj = Object.create(proto);
+    > obj.foo = "b";
+    'b'
+    > obj.foo
+    'b'
+    > proto.foo
+    'a'
+```
+
+1. 方法：允许直接在原型中修补方法，但防止通过原型的后代进行意外更改。
+2. 非方法属性：原型为后代提供共享的默认值。可以通过后代覆盖这些值，但不能更改它们。这被认为是一种反模式，不鼓励这样做。在构造函数中分配默认值更干净。
+
+### 4.4 只有定义允许您创建具有任意特性的属性
+如果通过赋值创建自己的属性，则该属性始终具有默认属性。如果要指定任意属性，则必须使用定义。请注意，这包括向对象添加 `getter` 和 `setter`。
+If you create an own property via assignment, it always has default attributes. If you want to specify arbitrary attributes, you must use definition. Note that that includes adding getters and setters to an object.
+### 4.5 通过定义添加对象文本的属性
+给定以下对象文本。 这在内部被翻译成一系列语句。您有两种选择。首先，通过属性赋值：其次，通过属性定义：第二个选项更好地表达了对象文本的语义：创建新的属性。出于同样的原因，`Object.create`通过其第二个参数接收属性描述符。
+```js
+    var obj = {
+        foo: 123
+    };
+    var obj = new Object();
+    obj.foo = 123;
+    var obj = new Object();
+    Object.defineProperties(obj, {
+        foo: {
+            value: 123,
+            enumerable: true,
+            configurable: true,
+            writable: true
+        }
+    });
+```
+### 4.6 方法的属性
+一种可能性（由Wirfs-Brock建议）是为方法提供以下属性：
+
+其思想是防止意外赋值：
+
+但是，由于`push`是可配置的(configurable: true)，因此我们可以通过*属性定义*在实例中覆盖它。 *属性定义*还将允许我们替换`Stack.prototype.push`。
+```
+    "use strict";
+    function Stack() {
+    }
+    Object.defineProperties(Stack.prototype, {
+        push: {
+            writable: false,
+            configurable: true,
+            value: function (x) { /* ... */ }
+        }
+    });
+    > var s = new Stack();
+
+    > s.push = 5;
+    TypeError: s.push is read-only
+    > var s = new Stack();
+    > Object.defineProperty(s, "push",
+          { value: function () { return "yes" }})
+
+    > s.push()
+    'yes'
+```
+
+# Part 5. 结论
+*属性赋值*通常用于向对象添加新属性。但这可能也会导致问题。因此，最好遵循以下简单规则：
+1. 如果要创建新属性，请使用*属性定义*。
+2. 如果要更改属性的值，请使用*属性赋值*。
+
+有人提醒说，使用属性描述符来实现 #1 是很慢的。而且我确实经常使用赋值来创建属性，因为它也更方便。值得庆幸的是，`ECMAScript.next`可能会使定义更快更方便，鉴于*属性定义*和*属性赋值*之间的区别是微妙的，但又很重要，这种对*属性定义*的帮助是非常有益的。
+
+下面是译者的 *属性定义* 和 *属性赋值* 的性能测试，粗略的结论是：*属性定义* < *属性赋值*。
+```js
+var q = {}
+
+// assignment
+let time = Date.now()
+for (let index = 0; index < 100000; index++) {
+    q[`a-${index}`] = index;
+}
+console.log('----------assign', Date.now() - time) // ~40ms
+
+// definition
+time = Date.now()
+for (let index = 0; index < 100000; index++) {
+    Object.defineProperty(q, `d-${index}`, { value: index })
+}
+console.log('----------define', Date.now() - time) // ~100ms
+```
+
+## 引用
+- 文章地址：[https://2ality.com/2012/08/property-definition-assignment.html](https://2ality.com/2012/08/property-definition-assignment.html)
+- 作者： Dr. Axel Rauschmayer
+1. [Prototypes as classes – an introduction to JavaScript inheritance](https://2ality.com/2011/06/prototypes-as-classes.html)
+2. [JavaScript properties: inheritance and enumerability](https://2ality.com/2011/07/js-properties.html)
+3. [Fixing the Read-only Override Prohibition Mistake](http://wiki.ecmascript.org/doku.php?id=strawman:fixing_override_mistake) [a page on the ECMAScript wiki with background information on this issue]
