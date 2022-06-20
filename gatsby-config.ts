@@ -24,7 +24,19 @@ module.exports = {
                 path: path.resolve("./src/pages"),
             },
         },
-        "gatsby-plugin-mdx",
+        {
+            resolve: `gatsby-plugin-mdx`,
+            options: {
+                gatsbyRemarkPlugins: [
+                    {
+                        resolve: `gatsby-remark-images`,
+                        options: {
+                            // maxWidth: 590,
+                        },
+                    },
+                ],
+            },
+        },
         `gatsby-transformer-sharp`,
         `gatsby-plugin-sharp`,
         {
